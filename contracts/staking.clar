@@ -69,6 +69,9 @@
         start-block: block-height, 
         last-claim-block: block-height 
       })
+    
+    ;; Update total staked amount
+    (var-set total-staked-amount (+ (var-get total-staked-amount) amount))
     (ok true))))
 
 ;; Unstake STX
@@ -95,6 +98,9 @@
         start-block: block-height, 
         last-claim-block: block-height 
       })
+    
+    ;; Update total staked amount
+    (var-set total-staked-amount (- (var-get total-staked-amount) amount))
     (ok true))))
 
 ;; Claim staking rewards
@@ -135,9 +141,8 @@
 (define-read-only (get-contract-info)
   {
     reward-rate: reward-rate,
-    total-staked: (fold + (map get-amount-staked (map-keys stakes)) u0)
+    total-staked: (var-get total-staked-amount)
   })
 
-;; Helper function to get amount staked by a user
-(define-private (get-amount-staked (user principal))
-  (get amount (get-stake-info user)))
+;; Data var to track total staked amount
+(define-data-var total-staked-amount uint u0)
