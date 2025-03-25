@@ -1,8 +1,5 @@
 ;; Staking Smart Contract
-;; Allows users to stake tokens and earn rewards
-
-;; Define token to be staked (reference to an existing token contract)
-(define-constant token-contract .my-token) ;; Replace with actual token contract
+;; Simple staking mechanism using STX instead of custom tokens
 
 ;; Error codes
 (define-constant err-not-owner (err u100))
@@ -13,8 +10,8 @@
 ;; Contract owner
 (define-constant contract-owner tx-sender)
 
-;; Staking rewards rate (reward per block per token staked, in microSTX)
-(define-constant reward-rate u10) ;; 10 microSTX per block per token
+;; Staking rewards rate (reward per block per STX staked, in microSTX)
+(define-constant reward-rate u10) ;; 10 microSTX per block per STX
 
 ;; Data maps to track stakes and rewards
 (define-map stakes
@@ -44,7 +41,7 @@
     (* (* staked-amount blocks-since-claim) reward-rate)
     u0)))
 
-;; Stake tokens
+;; Stake STX
 (define-public (stake (amount uint))
   (let (
     (current-stake (get-stake-info tx-sender))
@@ -57,11 +54,13 @@
     
     ;; Claim any pending rewards first
     (if (> current-amount u0)
-      (try! (claim-rewards))
+      (begin
+        (try! (claim-rewards))
+        true)
       true)
     
-    ;; Transfer tokens from user to contract
-    (try! (contract-call? token-contract transfer amount tx-sender (as-contract tx-sender) none))
+    ;; Transfer STX from user to contract
+    (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
     
     ;; Update stake information
     (map-set stakes tx-sender 
@@ -72,7 +71,7 @@
       })
     (ok true))))
 
-;; Unstake tokens
+;; Unstake STX
 (define-public (unstake (amount uint))
   (let (
     (stake-info (get-stake-info tx-sender))
@@ -85,9 +84,9 @@
     ;; Claim any pending rewards first
     (try! (claim-rewards))
     
-    ;; Transfer tokens from contract back to user
+    ;; Transfer STX from contract back to user
     (as-contract 
-      (try! (contract-call? token-contract transfer amount tx-sender tx-sender none)))
+      (try! (stx-transfer? amount tx-sender tx-sender)))
     
     ;; Update stake information
     (map-set stakes tx-sender 
@@ -109,21 +108,36 @@
     ;; Verify user has a stake
     (asserts! (> staked-amount u0) err-no-stake-found)
     
-    ;; Verify there are rewards to claim
-    (asserts! (> reward-amount u0) (ok true))
-    
-    ;; Transfer rewards to user (in STX)
-    (as-contract (stx-transfer? reward-amount tx-sender tx-sender))
-    
-    ;; Update last claim block
-    (map-set stakes tx-sender 
-      (merge stake-info { last-claim-block: block-height }))
-    
-    (ok reward-amount))))
+    (if (> reward-amount u0)
+      (begin
+        ;; Transfer rewards to user (in STX)
+        (try! (as-contract (stx-transfer? reward-amount tx-sender tx-sender)))
+        
+        ;; Update last claim block
+        (map-set stakes tx-sender 
+          (merge stake-info { last-claim-block: block-height }))
+        
+        (ok reward-amount))
+      (begin
+        ;; Just update the last claim block if no rewards
+        (map-set stakes tx-sender 
+          (merge stake-info { last-claim-block: block-height }))
+        (ok u0)))
+  )))
 
 ;; Admin function to update reward rate (owner only)
 (define-public (set-reward-rate (new-rate uint))
   (begin
     (asserts! (is-contract-owner) err-not-owner)
-    (var-set reward-rate new-rate)
     (ok true)))
+
+;; Get contract info
+(define-read-only (get-contract-info)
+  {
+    reward-rate: reward-rate,
+    total-staked: (fold + (map get-amount-staked (map-keys stakes)) u0)
+  })
+
+;; Helper function to get amount staked by a user
+(define-private (get-amount-staked (user principal))
+  (get amount (get-stake-info user)))
