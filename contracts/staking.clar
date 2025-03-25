@@ -45,9 +45,9 @@
 (define-private (is-contract-owner)
   (is-eq tx-sender contract-owner))
 
-;; Check if principal is valid (non-zero address)
+;; Check if principal is valid
 (define-private (is-valid-principal (user principal))
-  (not (is-eq (contract-of user) (as-contract tx-sender))))
+  (not (is-eq user tx-sender)))
 
 ;; Get current stake info for a user
 (define-read-only (get-stake-info (user principal))
@@ -206,7 +206,7 @@
     
     ;; Transfer full amount back to user
     (as-contract 
-      (try! (stx-transfer? staked-amount contract-owner user)))
+      (try! (stx-transfer? staked-amount tx-sender user)))
     
     ;; Update stake information
     (map-set stakes user 
